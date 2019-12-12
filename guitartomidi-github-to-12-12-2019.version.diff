@@ -1,0 +1,2037 @@
+diff -ur ./audioinputinterf.cpp ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/audioinputinterf.cpp
+--- ./audioinputinterf.cpp	2019-08-08 17:01:02.000000000 +0200
++++ ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/audioinputinterf.cpp	2019-12-03 18:18:32.781801073 +0100
+@@ -54,10 +54,10 @@
+ 
+ 
+     double longona=1.0/(/*2.0*M_PI**/curfreqhz);
+-    double longonasamples=longona*AudioBuff::SAMPLINGRATE;
+-    double longonax4=longonasamples*2;//SegmentDeFrequencies::FreqsPerNota;
++    double longonasamples=longona*(double)AudioBuff::SAMPLINGRATE;
++    double longonax4=longonasamples*2.0;//SegmentDeFrequencies::FreqsPerNota;
+ 
+-    unifiedint n=0;
++    double n=0;
+     /*if(longonax4<SegmentDeFrequencies::NumFactorsPreCalc)
+         return ret;*/
+ 
+@@ -75,8 +75,8 @@
+ 
+         }
+ 
+-        ret.ys+=SegmentDeFrequencies::PreCalcSin482f[n]*(double)contbuff[dbuffcontidx];
+-        ret.xc+=SegmentDeFrequencies::PreCalcCos482f[n]*(double)contbuff[dbuffcontidx];
++        ret.ys+=SegmentDeFrequencies::PreCalcSin482f[(int)n]*(double)contbuff[dbuffcontidx];
++        ret.xc+=SegmentDeFrequencies::PreCalcCos482f[(int)n]*(double)contbuff[dbuffcontidx];
+ 
+     }
+ 
+diff -ur ./audioinputinterf.h ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/audioinputinterf.h
+--- ./audioinputinterf.h	2019-08-08 17:01:02.000000000 +0200
++++ ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/audioinputinterf.h	2019-12-05 15:38:20.619300161 +0100
+@@ -31,7 +31,7 @@
+     static const int FreqsPerNota=4;
+     static const int NotesOctava=12;
+     static const int arraylongona=(int)NumFactorsPreCalc/4;
+-    constexpr static const double MinProporcioModulMax=1.0/2.0;
++    constexpr static const double MinProporcioModulMax=1.0/11.0;
+     constexpr static const double arrayfreq=1.0/(double)arraylongona;
+     double MaximModul=0;
+     double stddev=1;
+Només a ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019: gtmcreatedb.sqlite3
+diff -ur ./guitarfreqanalysis.cpp ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/guitarfreqanalysis.cpp
+--- ./guitarfreqanalysis.cpp	2019-08-08 17:01:02.000000000 +0200
++++ ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/guitarfreqanalysis.cpp	2019-12-05 19:25:08.714664574 +0100
+@@ -10,6 +10,11 @@
+ 
+ #include <string.h>
+ 
++#include <typeinfo>
++
++
++#include <string.h>
++
+ static char EnglishNotes[12][3]={"A","A#","B","C","C#","D","D#","E","F","F#","G","G#"};
+ 
+ 
+@@ -24,13 +29,162 @@
+     strcat(ret,nOctStr);
+     return Here;
+ };
++StepCondition::StepCondition(St st,bool Neg,FuzzyValue v,FuzzyValue Minimum)
++{
++    Status=st;
++    Negative=Neg;
++    //fzret=v;
++    val=v;
++    Done=true;
++    Weight=1;
++    Min=Minimum;
++};
++StepCondition::StepCondition(const StepCondition& other):StepCondition(other.Status,other.Negative,other.val,other.Min){
++
++}
++bool StepCondition::IsTrue()
++{
++    assert(false);
++    return Value()>Min;
++}
++void StepCondition::writeinfo(NoteInformation& ni)
++{
++    FuzzyCondition::writeinfo(ni);
++    char strstatus[128];
++    strstatus[0]=0;
++    switch(Status){
++        case StepCondition::Required:
++        strcpy(strstatus,"Status:Required ");
++        break;
++    case StepCondition::Requisite:
++        strcpy(strstatus,"Status:Requisite ");
++        break;
++    case StepCondition::Sufficient:
++        strcpy(strstatus,"Status:Sufficient ");
++
++
++    }
++    char strinfo[1024];
++    char negative[28];
++    if(Negative)
++        strcpy(negative,"Not");
++    else
++        negative[0]=0;
++    sprintf(strinfo,"StepCondition:%s,%s Value:%f, Min:%f\n",strstatus,negative,(fzDouble)val,(fzDouble)Min);
++    ni.AddLine(strinfo);
++}
++FuzzyValue StepCondition::Value()
++{
++    FuzzyValue stepfz=val;
++    if(Negative)
++        stepfz=FuzzyValue::Not(stepfz);
++    //val=stepfz;
++    return Weight*stepfz;
++}
++void SequentialCondition::Append(StepCondition& cond)
++{
++     cond.gfa=gfa;
++     Steps.push_back(cond);
++ };
++
++bool SequentialCondition::IsTrue()
++{
++    std::list<StepCondition>::iterator it=Steps.begin();
++    bool Continue=true;
++    bool Ret=true;
++
++    while(Continue && it!=Steps.end())
++    {
++        FuzzyValue stepfz=(*it).Value();
++        bool rqRet=(stepfz>=(*it).Min);
++        switch((*it).Status)
++        {
++
++            case StepCondition::Required:
++
++                if(rqRet)
++                {
++                    Continue=true;
++                }
++                else
++                {
++                    Ret=false;
++                    Continue=false;
++                }
+ 
++            break;
++            case StepCondition::Requisite:
++                Ret=Ret && (stepfz>=(*it).Min);
++                Continue=true;
++            break;
++            case StepCondition::Sufficient:
++                //Ret=Ret ||
++                //bool curret=((stepfz)>=(*it).Min);
++                if(rqRet)
++                {
++                    Ret=true;
++                    Continue=false;
++                }
++                else
++                    Continue=true;
++                break;
++            case StepCondition::Optional:
++                Continue=true;
++                break;
++        }
++        it++;
++
++
++    }
++    if(Ret)
++        fzret=FuzzyValue::True();
++    else
++        fzret=FuzzyValue::False();
++    //Done=true;
++    //Done=false;
++    return Ret;
++}
++FuzzyValue FuzzyCondition::Value()
++{
++   FuzzyValue ret=0;
++    if(Done)
++        ret=Weight*fzret;
++    else
++        IsTrue();
++    Done=true;
++    ret=Weight*fzret;
++    ret=std::max(0.0,std::min(1.0,(fzDouble)ret));
++
++
++    assert(ret>=0 && ret<=1);
++    return ret;
++}
++
++FuzzyValue FuzzyValue::Union(FuzzyValue a,FuzzyValue b)
++{
++  //  return (a+b)/2.0;
++    return std::max(a.val,b.val);
++};
++FuzzyValue FuzzyValue::Intersect(FuzzyValue a,FuzzyValue b)
++{
++//    return a*b;
++    return std::min(a.val,b.val);
++};
++FuzzyValue FuzzyValue::Not(FuzzyValue v)
++{
++    return FuzzyValue(1.0-(double)v.val);
++};
++FuzzyValue FuzzyValue::Xor(FuzzyValue a,FuzzyValue b)
++{
++    return Union(Intersect(a,Not(b)),Intersect(b,Not(a)));
++}
+ 
+ 
+ 
+ 
+-void FreqEvent::evNoteOn(unsigned short nnote,unsigned short vel,unsigned short nfreq,unsigned long nbuffer,clock_t tm)
++void FreqEvent::evNoteOn(unsigned short nnote,unsigned short vel,unsigned short nfreq,unsigned long nbuffer,clock_t tm,PuntuacioNota pu)
+ {
++    Puntuacio=pu;
+     nFreq=nfreq;
+     hz=GuitarFreqAnalysis::HzFromnFreq(nFreq,SegmentDeFrequencies::NotesOctava*SegmentDeFrequencies::FreqsPerNota);
+     eventtype=NoteOn;
+@@ -74,7 +228,7 @@
+ {
+     double dnote=(double)freq/(double)(SegmentDeFrequencies::FreqsPerNota);
+     //short ret=(short)std::round(dnote);
+-    short ret=(short)std::round(dnote);
++    short ret=(short)std::round(dnote-0.00001);
+     return ret;
+ };
+ short GuitarFreqAnalysis::FreqNoteFromNote(short note)
+@@ -100,19 +254,27 @@
+     return *new AndCondition(this,&other);
+ 
+ };
+-
++void FuzzyCondition::writeinfo(NoteInformation &ni)
++{
++    char stoadd[2048];
++    sprintf(stoadd,"Condicio %s,Valor:%f, \n",typeid(*this).name(),(fzDouble)Value());
++    strcat(ni.getStr(),stoadd);
++}
+ NoteCondition::NoteCondition(GuitarFreqAnalysis& gfa,SegmentDeFrequencies* cursg,SegmentDeFrequencies *prevsg,int freq,double velocity,int note,bool Precis){
+     this->gfa=&gfa;
+     curseg=cursg;
+     prevseg=prevsg;
+     this->nfreq=freq;
+     this->velocity=velocity;
+-    this->nnote=note;
++    this->nnote=(unsigned)note;
+     this->Precis=Precis;
++   // this->Puntu=PuntuacioNota();
++    fzret=0;
++    Weight=1;
+ }
+ IsPreciseMaxCondition::IsPreciseMaxCondition(GuitarFreqAnalysis& gfa,SegmentDeFrequencies* cursg,SegmentDeFrequencies *prevsg,int freq,double velocity,int note,bool Precis):NoteCondition(gfa,cursg,prevsg,freq,velocity,note,Precis)
+ {
+-
++    Weight=1;
+ }
+ bool IsPreciseMaxCondition::IsTrue()
+ {
+@@ -125,8 +287,9 @@
+     {
+         events[i+NumFreqsMirar/2]=this->gfa->CalcModulPrecisNota(this->nfreq+i,nnote,*curseg,192);
+     }
+-    int ievmax=NumFreqsMirar/2;;
+-
++    int ievmax=NumFreqsMirar/2;
++    fzret=True();
++    double MitjaDiff=0;
+     for(int i=0;i<NumFreqsMirar;i++)
+     {
+         int nfreqcur=nfreq+i-NumFreqsMirar/2;
+@@ -141,65 +304,165 @@
+                 modulseguent=events[i-1].modul;
+ 
+         }else {//i==NumFreqsMirar/2 || MirarCentre
+-                modulseguent=events[i].modul;
++                modulseguent=events[NumFreqsMirar/2].modul;
+         }
+-        if(events[i].modul>modulseguent){
+-            ret=false;
+-            break;
+-        }
+-
+-    }
++        //fzret=FuzzyCondition::Union(std::max(0.0,(modulseguent-events[i].modul))/std::max(1.0,events[i].modul),fzret);
++        fzret=FuzzyCondition::Intersect(std::max(0.0,(modulseguent-events[i].modul+(events[i].modul/100.0)))/std::max(1.0,events[i].modul),fzret);
++        //MitjaDiff+=modulseguent-events[i].modul;
+ 
+ 
++    }
++    if((events[NumFreqsMirar/2].modul)==0)
++    {
++        std::cout<<"CalcPreciss MitjaDiff==0 !!!!!!!!!1";
++        fzret=0;
++        ret=false;
++        Done=true;
++    }
++    else
++    {
++        //fzret=MitjaDiff/(double)(events[NumFreqsMirar/2].modul*(double)NumFreqsMirar);
++        ret=(fzret>0);
++        Done=true;
++    }
+     return ret;
+ }
+ NoteOnCondition::NoteOnCondition(GuitarFreqAnalysis& gfa,SegmentDeFrequencies* cursg,SegmentDeFrequencies *prevsg,int freq,double velocity,int note,bool Precis,bool prevsel):NoteCondition(gfa,cursg,prevsg,freq,velocity,note,Precis)
+ {
+-    int nfreq1=nnote*SegmentDeFrequencies::FreqsPerNota-SegmentDeFrequencies::FreqsPerNota/2;
+-    int nfreq2=nnote*SegmentDeFrequencies::FreqsPerNota+SegmentDeFrequencies::FreqsPerNota/2;
++    Weight=1;
++
+     SecondSel=prevsel;
+ 
+ }
++
+ bool NoteOnCondition::IsTrue()
+ {
+     bool ret=false;
+-//    IncreaseModuleCondition inccdiff(curseg->Segment[nfreq].absdiff,prevseg->Segment[nfreq].absdiff,GuitarFreqAnalysis::MinModulNota);
+-
++    fzret=0;
++    gfa->curnoteinfo.clear();
++    gfa->seqNoteOnCond.Reset();
+     IncreaseModuleCondition inccmodul(curseg->Segment[nfreq].modul,prevseg->Segment[nfreq].modul,GuitarFreqAnalysis::MinModulNota,
+-                                    curseg->MaximModul,curseg->MinProporcioModulMax                                      );
++                                    curseg->MaximModul,curseg->MinProporcioModulMax     );
+ 
+-    int rangmirar=1*SegmentDeFrequencies::FreqsPerNota/4;
+-    if(!inccmodul.IsTrue() && !SecondSel)
++    int rangmirar=2.0*SegmentDeFrequencies::FreqsPerNota/4.0;
++    double MinIncrease=0.05;
++
++    //if(!inccmodul.IsTrue())
++    bool boolRetInc=inccmodul.IsTrue();
++
++    double incrementmodul=inccmodul.Value();
++    inccmodul.writeinfo(gfa->curnoteinfo);
++    char ts[128];
++    sprintf(ts,"IncreaseModule val:%f,min:%f",(fzDouble)incrementmodul,MinIncrease);
++    gfa->curnoteinfo.AddLine(ts);
++    if(incrementmodul<MinIncrease || !boolRetInc)
++    {
++        Done=true;
++        fzret=FuzzyValue::False();
+         return false;
++
++    }
++
++
++
+     ret=false;
++    int rangdiv=rangmirar*2-1;
+     for(int r=-rangmirar;r<=rangmirar && (!ret);r++)
+     {
++        //StepCondition rStep;
++        SequentialCondition seqrang;
++
+ //        IsMaxFreqCondition maxfreq(nfreq+r,curseg,gfa,(int)SegmentDeFrequencies::FreqsPerNota/2.0,IsMaxFreqCondition::ModulCond /*| IsMaxFreqCondition::AbsDiffCond*/);
+-        IsMaxCenterCondition maxcenter(nfreq+r,curseg,gfa,4*(int)SegmentDeFrequencies::FreqsPerNota/4.0,
++        IsMaxCenterCondition maxcenter(nfreq+r,curseg,gfa,2*(int)SegmentDeFrequencies::FreqsPerNota/4.0,
+                                  /*IsMaxFreqCondition::MaxValueCond*/IsMaxFreqCondition::ModulCond);
++        //maxcenter.=Puntu;
+         ret=maxcenter.IsTrue();
+-        if(ret)
+-        {
+-            char sNote[5];
+-            //std::cout<<"MaxCenter: "<<EnglishNoteFromMidiNNote(nnote,sNote)<<std::endl;
+-            //std::cout<<"Freq:"<<nfreq+r<<"Modul:""
++        StepCondition maxcenterstep(StepCondition::Required,false,maxcenter.Value(),0.033);
++        seqrang.Append(maxcenterstep);
++        maxcenterstep.writeinfo(gfa->curnoteinfo);
++        maxcenter.writeinfo(gfa->curnoteinfo);
++        ret=seqrang.IsTrue();// && ret;
++
++        fzret=maxcenter.Value();
++
++#undef FINDHARMONICS
++#ifdef FINDHARMONICS
++        if(ret && nnote<51)
++        {
++
++            TeHarmonics th(*gfa,nfreq+r,*curseg,*prevseg);
++            StepCondition stharm(StepCondition::Optional,false,th.Value(),1.0);
++            th.writeinfo(gfa->curnoteinfo);
++            stharm.writeinfo(gfa->curnoteinfo);
++            seqrang.Append(stharm);
+ 
+         }
+-        if(ret && Precis)
++#endif
++#define PRECIS
++#ifdef PRECIS
++        //Precis=Precis;// && nnote>=48;
++        if(seqrang.IsTrue() && Precis)
+         {
++            //std::cout<<"més precís"<<std::endl;
+             IsPreciseMaxCondition Prcs(*gfa,curseg,prevseg,nfreq+r,2,nnote,true);
+-            ret=Prcs.IsTrue();
+-            if(ret)
+-                nfreq=nfreq+r;
+ 
++
++            double preciseret=Prcs.Value();
++            Prcs.writeinfo(gfa->curnoteinfo);
++            gfa->curnoteinfo.AddLine("if(Precis && fzret>0.1)");
++            //std::cout<<"Precis,punt:"<<fzret<<std::endl;
++            StepCondition precisestep(StepCondition::Required,false,preciseret,0.01);
++            precisestep.writeinfo(gfa->curnoteinfo);
++            seqrang.Append(precisestep);
++            //std::cout<<gfa->curnoteinfo.getStr();
++        }
++
++#endif
++        ret=seqrang.IsTrue();
++        fzret=seqrang.Value();
++        if(ret)
++        {
++
++            break;
+         }
+     }
+ 
++    Done=true;
++    writeinfo(gfa->curnoteinfo);
++
++    if(ret==false)
++        fzret=0;
++    else
++        fzret=incrementmodul;
++    return ret;
++}
++
++FuzzyValue NoteOnCondition::Value()
++{
++//    IsTrue();
++    FuzzyValue ret=0;
++    if(Done)
++        ret=Weight*fzret;
++    else
++    {
++       IsTrue();
++       ret=Weight*fzret;
++    }
++    Done=true;
+     return ret;
+ }
++
++
+ bool ApproxCondition::IsTrue()
+ {
+-    return fabs(a-b)<fabs(a*pcerr/100.0);
++    //fzret=std::min(1.0,fabs(a*pcerr/100.0)/fabs(a-b));
++    //fzret=std::max(0.0,(fabs(a-b)-fabs(a*pcerr/100.0)));
++    Done=true;
++
++    bool ret=fabs(a-b)<fabs(a*pcerr/100.0);
++    fzret=ret?(1.0):(0.0);
++    Done=true;
++    return ret;
+ }
+ 
+ EsHarmonicCond::EsHarmonicCond(FreqEvent base,FreqEvent harm)
+@@ -210,18 +473,27 @@
+ };
+ bool EsHarmonicCond::IsTrue()
+ {
+-    double maxerrorpercent=2.0/48.0;
+ 
+-    for(int nharm=2;nharm<8;nharm++)
++    fzret=0;
++    for(int nharm=2;nharm<=5;nharm++)
+     {
+-        ApproxCondition appr(b.hz*nharm,h.hz,2);
++        ApproxCondition appr(b.hz*nharm,h.hz,(double)8.0);
+ 
+-        if(appr.IsTrue())
++        //if(appr.IsTrue())
++          //  fzret=FuzzyLogicObj::Union()
++        bool  bret=appr.IsTrue();
++        fzret=FuzzyValue::Or(fzret,appr.Value());
++        if(bret)
++        {
++            std::cout<<"HARMONIC"<<std::endl;
+             return true;
++
++        }
++
+     }
+-    return false;
+-}
+ 
++    return fzret>0;
++}
+ 
+ 
+ 
+@@ -235,7 +507,7 @@
+         addsubst=as;
+     TypeCond=type;
+ 
+-
++    Weight=1.0;
+ }
+ bool IsMaxFreqCondition::IsTrue()
+ {
+@@ -244,11 +516,14 @@
+     {
+         for (int r=-addsubst;r<=-1 && ret;r++)
+         {
++             fzret=FuzzyCondition::Intersect(fzret,((currentseg->Segment[nfreq+r+1].absdiff-currentseg->Segment[nfreq+r].absdiff))/currentseg->Segment[nfreq].modul);
+              ret=ret && currentseg->Segment[nfreq+r].absdiff<currentseg->Segment[nfreq+r+1].absdiff;
+ 
+         }
+         for(int r=1;r<=addsubst && ret;r++)
+         {
++            fzret=FuzzyCondition::Intersect(fzret,(currentseg->Segment[nfreq+r-1].absdiff-currentseg->Segment[nfreq+r].absdiff)/currentseg->Segment[nfreq].modul);
++
+              ret=ret && currentseg->Segment[nfreq+r].absdiff<currentseg->Segment[nfreq+r-1].absdiff;
+         }
+     }
+@@ -256,11 +531,15 @@
+     {
+         for (int r=-addsubst;r<=-1 && ret;r++)
+         {
++            fzret=FuzzyCondition::Intersect(fzret,(currentseg->Segment[nfreq+r+1].modul-currentseg->Segment[nfreq+r].modul)/currentseg->Segment[nfreq].modul);
++
+              ret=ret && currentseg->Segment[nfreq+r].modul<currentseg->Segment[nfreq+r+1].modul;
+ 
+         }
+         for(int r=1;r<=addsubst && ret;r++)
+         {
++            fzret=FuzzyCondition::Intersect(fzret, (currentseg->Segment[nfreq+r-1].modul-currentseg->Segment[nfreq+r].modul)/currentseg->Segment[nfreq].modul);
++
+              ret=ret && currentseg->Segment[nfreq+r].modul<currentseg->Segment[nfreq+r-1].modul;
+         }
+     }
+@@ -269,63 +548,137 @@
+     {
+         for (int r=-addsubst;r<=-1 && ret;r++)
+         {
++            fzret=FuzzyCondition::Intersect(fzret,(currentseg->Segment[nfreq+r+1].max-currentseg->Segment[nfreq+r].max)/currentseg->Segment[nfreq].modul);
++
+              ret=ret && currentseg->Segment[nfreq+r].max<currentseg->Segment[nfreq+r+1].max;
+ 
+         }
+         for(int r=1;r<=addsubst && ret;r++)
+         {
++            fzret=FuzzyCondition::Intersect(fzret,(currentseg->Segment[nfreq+r-1].max-currentseg->Segment[nfreq+r].max)/currentseg->Segment[nfreq].modul);
++
+              ret=ret && currentseg->Segment[nfreq+r].max<currentseg->Segment[nfreq+r-1].max;
+         }
+     }
++    writeinfo(gfa->curnoteinfo);
+     return ret;
+ }
+ IsMaxCenterCondition::IsMaxCenterCondition(int nfr,SegmentDeFrequencies *cs,GuitarFreqAnalysis *ga,int as,int type):IsMaxFreqCondition(nfr,cs,ga,as,type)
+ {
+-
++    Weight=20;
+ 
+ }
+ 
+ bool IsMaxCenterCondition::IsTrue()
+ {
+     bool ret=true;
++    fzret=True();
+     if(TypeCond&AbsDiffCond)
+     {
+-        for (int r=-addsubst;r<=-1 && ret;r++)
++        for (int r=-addsubst;r<=-1/* && ret*/;r++)
+         {
++             fzret=FuzzyLogicObj::Intersect(fzret,std::max((double)0,(currentseg->Segment[nfreq].absdiff-currentseg->Segment[nfreq+r].absdiff)))/(currentseg->Segment[nfreq].modul);
++
+              ret=ret && currentseg->Segment[nfreq+r].absdiff<currentseg->Segment[nfreq].absdiff;
+ 
+         }
+-        for(int r=1;r<=addsubst && ret;r++)
++        for(int r=1;r<=addsubst /*&& ret*/;r++)
+         {
+-             ret=ret && currentseg->Segment[nfreq+r].absdiff<currentseg->Segment[nfreq].absdiff;
++            fzret=FuzzyLogicObj::Intersect(fzret,std::max(0.0,(currentseg->Segment[nfreq].absdiff-currentseg->Segment[nfreq+r].absdiff))/(currentseg->Segment[nfreq].modul));
++
++            ret=ret && currentseg->Segment[nfreq+r].absdiff<currentseg->Segment[nfreq].absdiff;
+         }
+     }
+     if(TypeCond&ModulCond)
+     {
+-        for (int r=-addsubst;r<=-1 && ret;r++)
++        for (int r=-addsubst;r<=-1 /*&& ret*/;r++)
+         {
+-             ret=ret && currentseg->Segment[nfreq+r].modul<currentseg->Segment[nfreq].modul;
++            fzret=FuzzyLogicObj::Intersect(fzret,std::max(0.0,(currentseg->Segment[nfreq].modul-currentseg->Segment[nfreq+r].modul))/(currentseg->Segment[nfreq].modul));
++
++            ret=ret && currentseg->Segment[nfreq+r].modul<currentseg->Segment[nfreq].modul;
+ 
+         }
+-        for(int r=1;r<=addsubst && ret;r++)
++        for(int r=1;r<=addsubst/* && ret*/;r++)
+         {
++            fzret=Intersect(fzret,std::max(0.0,(currentseg->Segment[nfreq].modul-currentseg->Segment[nfreq+r].modul)/(currentseg->Segment[nfreq].modul)));
++
+              ret=ret && currentseg->Segment[nfreq+r].modul<currentseg->Segment[nfreq].modul;
+         }
+     }
+     if(TypeCond&MaxValueCond)
+     {
+-        for (int r=-addsubst;r<=-1 && ret;r++)
+-        {
++        for (int r=-addsubst;r<=-1/* && ret*/;r++)
++                    {
++            fzret=Intersect(fzret,std::max(0.0,currentseg->Segment[nfreq].max-currentseg->Segment[nfreq+r].max)/(currentseg->Segment[nfreq].max));
++
+              ret=ret && currentseg->Segment[nfreq+r].max<currentseg->Segment[nfreq].max;
+ 
+         }
+-        for(int r=1;r<=addsubst && ret;r++)
++        for(int r=1;r<=addsubst /*&& ret*/;r++)
+         {
++             fzret=Intersect(fzret,(std::max(0.0,currentseg->Segment[nfreq].max-currentseg->Segment[nfreq+r].max))/(currentseg->Segment[nfreq].max));
++
+              ret=ret && currentseg->Segment[nfreq+r].max<currentseg->Segment[nfreq].max;
+         }
+     }
++    Done=true;
++    writeinfo(gfa->curnoteinfo);
++    //ret=fzret>0;
++    /*if(!ret)
++        fzret=0;*/
++    return ret;
++}
++
++int TeHarmonics::defaultharmonicsMirar[3]={2,3,4};
++
++TeHarmonics::TeHarmonics(GuitarFreqAnalysis & gf,int nfreq,SegmentDeFrequencies& curs,SegmentDeFrequencies& prevs,int *harmonics,int numharmonics)
++{
++    gfa=&gf;
++    fv=curs.Segment[nfreq];
++    curseg=&curs;
++    prevseg=&prevs;
++    harmmirar=harmonics;
++    numharmmirar=numharmonics;
++    fv=curs.Segment[nfreq];
++    NFreqBase=nfreq;
++    Weight=10;
++    //Maxcond=new IsMaxCenterCondition(nfreq,curseg,gfa,IsMaxFreqCondition::ModulCond);
++
++}
++bool TeHarmonics::IsTrue()
++{
++    bool ret=true;
++    fzret=0;
++    if(harmmirar==nullptr || numharmmirar==0)
++        return true;
++    for (int nh=0;nh<numharmmirar;nh++)
++    {
++        double factor=harmmirar[nh];
++        double HzBase=gfa->HzFromnFreq(NFreqBase,SegmentDeFrequencies::NotesOctava*SegmentDeFrequencies::FreqsPerNota);
++        double HzHarm=HzBase*factor;
++        int NumFreqsOctava=curseg->NotesOctava*curseg->FreqsPerNota;
++        int nfreqharm=(int)std::round((double)NFreqBase+(double)NumFreqsOctava*log((double)factor)/log(2.0));
++        IsMaxCenterCondition maxc(nfreqharm,curseg,gfa,4,IsMaxFreqCondition::ModulCond);
++        ret=ret && maxc.IsTrue();
++        IncreaseModuleCondition inccmodul(curseg->Segment[nfreqharm].modul,prevseg->Segment[nfreqharm].modul,0/*GuitarFreqAnalysis::MinModulNota*/,
++                                        curseg->MaximModul,curseg->MinProporcioModulMax/4.0);
++
++        //bool inccbool=inccmodul.IsTrue();
++        fzret=FuzzyLogicObj::Union(fzret,FuzzyLogicObj::Intersect(inccmodul.Value(),maxc.Value()));
++    }
++    Done=true;
++    ret=fzret>0.1;
++    if(ret)
++        std::cout<<'H';
++    writeinfo(gfa->curnoteinfo);
+     return ret;
++
++}
++TeHarmonics::~TeHarmonics()
++{
+ }
++
++
+ template<class EL>ContinuousBuffer<EL>::ContinuousBuffer(const EL *array,size_t numels)
+ {
+     buff=array;
+@@ -354,15 +707,17 @@
+     {
+ 
+         case FreqEvent::NoteOn:
+-            std::cout<<std::endl<<f.nBuffer<<":note on: "<<EnglishNote<<"note num: "<<f.note<<" Velocity:"<<f.velocity<<" Frequency"<<f.nFreq<<"Hertz:"<<f.hz<< "Hz"<<std::endl;
++            std::cout<<std::endl<<f.nBuffer<<":note on: "<<EnglishNote<<"note num: "<<f.note<<" Velocity:"<<f.velocity<<" Frequency"<<f.nFreq<<"Hertz:"<<f.hz<< "Hz"<<"Points:"<<f.Puntuacio.PuntuacioOn<<std::endl;
+         break;
+         case FreqEvent::NoteOff:
+             std::cout<<std::endl<<f.nBuffer<<":note off: "<<EnglishNote<<std::endl;
+         break;
+     }
++
+ }
+ GuitarFreqAnalysis::GuitarFreqAnalysis(AudioInputInterf *Interf,SystemNotifyFreqs *sn)
+ {
++    seqNoteOnCond.gfa=this;
+     audioInterface=Interf;
+     noti=sn;
+ 
+@@ -401,7 +756,7 @@
+ 
+     double longona=(double)1.0/curfreqhz;
+     double longonasamples=longona*(double)AudioBuff::SAMPLINGRATE;
+-    double longonax4=longonasamples*4;//SegmentDeFrequencies::FreqsPerNota;
++    double longonax4=longonasamples*12;//SegmentDeFrequencies::FreqsPerNota;
+     unifiedint n=0;
+     double alpha=curseg.Segment[nfreq].alphacos;
+     for(n=0;n<NumFactorsMax;n++)
+@@ -417,15 +772,13 @@
+             break;
+ 
+         }
+-        ;
+-        ret.ys+=sin(alpha+(double)4.0*(double)n*(double)2.0*(double)M_PI/(double)NumFactorsMax)*(double)buffcont[buffidxc];
+ 
+-        ret.xc+=cos(alpha+(double)4.0*(double)n*(double)2.0*(double)M_PI/(double)NumFactorsMax)*(double)buffcont[buffidxc];
++        ret.ys+=sin(alpha+(double)12.0*(double)n*(double)2.0*(double)M_PI/(double)NumFactorsMax)*(double)buffcont[buffidxc];
++
++        ret.xc+=cos(alpha+(double)12.0*(double)n*(double)2.0*(double)M_PI/(double)NumFactorsMax)*(double)buffcont[buffidxc];
+ 
+     }
+-    unifiedint nfactors=n;
+-    if(nfactors<AudioBuff::MinFactorsFreq)
+-        return ret;
++    double nfactors=(double)n;
+     ret.xc=ret.xc/nfactors;
+     ret.ys=ret.ys/nfactors;
+     ret.modul=sqrt(pow(ret.ys,2.0)+pow(ret.xc,2.0));
+@@ -433,6 +786,8 @@
+     ret.nfactors=nfactors;
+     ret.absdiff=abs(ret.ys-ret.xc);
+     ret.alphacos=acos(ret.xc/ret.modul);
++    if(nfactors<AudioBuff::MinFactorsFreq)
++        return ret;
+ 
+     return ret;
+ }
+@@ -512,9 +867,24 @@
+     }
+     return IsMax && NouAmplituddiff && defiar && SuffFactors;
+  };
+-int freqEventCmp(const AudioBuff& buff,FreqEvent note1,FreqEvent note2)
++int freqEventCmp(const AudioBuff& buff,FreqEvent note1,FreqEvent note2,bool Puntuacio=true)
+ {
+     int ret=0;
++    if(false && Puntuacio==true)
++    {
++        if(note1.Puntuacio.PuntuacioOn>note2.Puntuacio.PuntuacioOn)
++        {
++            ret=1;
++        }
++        else
++        if(note1.Puntuacio.PuntuacioOn<note2.Puntuacio.PuntuacioOn)
++        {
++            ret=-1;
++        }
++        return ret;
++    }
++
++
+     if(note1.velocity>note2.velocity)
+     {
+         ret=1;
+@@ -527,6 +897,7 @@
+         ret=-0;
+        }
+     return ret;
++
+ }
+ 
+ std::list<FreqEvent> GuitarFreqAnalysis::PrioritySort( std::list<FreqEvent> notes)
+@@ -534,7 +905,7 @@
+     std::list<FreqEvent> ret;
+ 
+     int i;
+-    for(int i=0;notes.size()>0  && ((ret.size()+NotesOn.size())<MaxNotesPoly);i++)
++    for(int i=0;notes.size()>0  /*&& ((ret.size()+NotesOn.size())<MaxNotesPoly)*/;i++)
+     {
+         std::list<FreqEvent>::iterator it=notes.begin();
+         std::list<FreqEvent>::iterator itmax=it;
+@@ -596,6 +967,7 @@
+ void GuitarFreqAnalysis::Step()
+ {
+ 
++
+     ChangedEvents=false;
+ 
+     SegmentDeFrequencies cursegcopy=currentaudiobuf.currentseg;
+@@ -647,62 +1019,29 @@
+    bool HiHaNotesOn=HiHaNotesOff || (currentaudiobuf.currentseg.stddev>currentaudiobuf.prevseg.stddev);
+ 
+ 
+-   int ini=AudioBuff::MIN_NNOTE*SegmentDeFrequencies::FreqsPerNota;
+-   int fi=AudioBuff::MAX_NNOTE*SegmentDeFrequencies::FreqsPerNota;
++   //int ini=AudioBuff::MIN_NNOTE*SegmentDeFrequencies::FreqsPerNota;
++   //int fi=AudioBuff::MAX_NNOTE*SegmentDeFrequencies::FreqsPerNota;
+    std::list<FreqEvent> SelNotes;
+-#ifdef NONOTEONCONDITION
+-
+-   for(unifiedint i=ini+1;i<=fi-1;i++)
+-   {
+-       short nnote=GuitarFreqAnalysis::NoteFromFreqNote((short)i);
+-       double velocity=0;
+-       FreqEvent curev;
+-       if(NoteStatus[nnote]!=NoteStatusOn  && IsNoteOn(currentaudiobuf.currentseg,currentaudiobuf.prevseg,(unsigned)i,velocity,(unsigned)nnote,false))
+-       {
+-
+ 
+-//           if(NoteStatus[nnote]!=NoteStatusOn /*&& NotesOn.size()<(size_t)MaxNotesPoly*/)
+-           {
+-               bool PrecisNoteOn=true;
+-#if 0
+-               FreqVal freqprecispre=CalcModulPrecisNota((int)i-1,(int)nnote,currentaudiobuf.currentseg,192);
+-               FreqVal freqprecis=CalcModulPrecisNota((int)i,(int)nnote,currentaudiobuf.currentseg,192);
+-               FreqVal freqprecispost=CalcModulPrecisNota((int)i+1,(int)nnote,currentaudiobuf.currentseg,192);
+-               //FreqVal freqprecisant=CalcModulPrecisNota((int)i,(int)nnote,currentaudiobuf.prevseg,192);
+-               currentaudiobuf.currentseg.Segment[i-1]=freqprecispre;
+-               currentaudiobuf.currentseg.Segment[i]=freqprecis;
+-               currentaudiobuf.currentseg.Segment[i+1]=freqprecispost;
+-
+-               PrecisNoteOn=IsNoteOn(currentaudiobuf.currentseg,currentaudiobuf.prevseg,(int)i,velocity,(unsigned)nnote,true);
+-#endif
+-
+-
+-                if(velocity==0.0 || !PrecisNoteOn)
+-                    continue;
+-                curev.note=(unsigned short)nnote;
+-                curev.nFreq=(unsigned short)i;
+-                curev.time=clock();
+-                curev.nBuffer=nBuffer;
+-                curev.velocity=velocity;
+-                curev.eventtype=FreqEvent::NoteOn;
+-
+-                SelNotes.push_back(curev);
+-                //
+-           }
+-
+-       }
+-
+-
+-   }
+-#endif
+-    bool SecondSel=PrevSelNotes.size()>0 && IntersectSelNotes;
++   bool SecondSel=PrevSelNotes.size()>0 && IntersectSelNotes;
+    for(int nnota=AudioBuff::MIN_NNOTE;nnota<AudioBuff::MAX_NNOTE && HiHaNotesOn;nnota++)
+    {
++       curnoteinfo.clear();
++       //std::o s;
++       char chnnote[10];
++       //s.append("Note number:");
++        sprintf(curnoteinfo.getStr(),"Note Number:%d,Note:%s \n",nnota,EnglishNoteFromMidiNNote(nnota,chnnote));
++
++       //curnoteinfo.AddLine("Note number:");
+        bool precis=!IntersectSelNotes || SecondSel;
++
+        NoteOnCondition noc(*this,&currentaudiobuf.currentseg,&currentaudiobuf.prevseg,(short)FreqNoteFromNote((short)nnota),16.0,(short)nnota,precis,SecondSel);
++
+        FreqEvent curev;
++       //if(noc.Value()>0.1)
+        if(noc.IsTrue())
+        {
++           //std::cout<<"noc.IsTrue():NoteOn, points:"<<noc.Value()<<std::endl;
+            curev.hz=HzFromnFreq(noc.nfreq,SegmentDeFrequencies::NotesOctava*SegmentDeFrequencies::FreqsPerNota);
+            curev.note=(unsigned short)nnota;
+            curev.nFreq=(unsigned short)noc.nfreq;
+@@ -710,13 +1049,26 @@
+            curev.nBuffer=nBuffer;
+            curev.velocity=currentaudiobuf.currentseg.Segment[curev.nFreq].modul*2.0/MinModulNota;
+            curev.eventtype=FreqEvent::NoteOn;
+-
+-
+-
++           curev.Puntuacio.Nota=curev.note;
++           curev.Puntuacio.nfreq=curev.nFreq;
++           curev.Puntuacio.PuntuacioOn=noc.Value();
++
++           noc.writeinfo(curnoteinfo);
++           char tmps[512];
++           char chnnote[10];
++           //s.append("Note number:");
++           sprintf(tmps,"***Add Note Number:%d,Note:%s \n",nnota,EnglishNoteFromMidiNNote(nnota,chnnote));
++           curnoteinfo.AddLine(tmps);
++           //std::cout<<curnoteinfo.getStr();
++           //std::cout<<std::endl;
++           //std::cout<<curnoteinfo.getstr();
++           strcpy(curev.infostr,curnoteinfo.getStr());
++           //std::cout<<"noc.IsTrue():  "<<curnoteinfo.getStr();
+            SelNotes.push_back(curev);
+        }
+ 
+    }
++#undef INTERSECT_PREVSELNOTES
+ #ifdef INTERSECT_PREVSELNOTES
+    std::list<FreqEvent> intersectNotes;
+    if(SecondSel){
+@@ -740,17 +1092,19 @@
+             double hzh=(*it2).hz;
+             if(hzprec>=hzh)
+             {
+-                assert(hzprec>=hzh);
+                break;
+             }
+             EsHarmonicCond es((*it),(*it2));
++            es.writeinfo(curnoteinfo);
+ 
++            //if(es.Value()>0.01)
+             if(es.IsTrue())
+             {
++                std::cout<<curnoteinfo.getStr()<<std::endl;
+                 it2=SelNotes.erase(it2);
+ 
+-                std::cout<<"H"<<std::endl;
+-                std::cout.flush();
++                std::cout<<"Harmonic eliminat!"<<std::endl;
++
+             }
+             else {
+                 it2++;
+@@ -762,17 +1116,58 @@
+ 
+    if(HiHaNotesOn)
+    {
++        //strcat(curnoteinfo.getStr(),"HiHaNotesOn=true");
++        //std::cout<<curnoteinfo.getStr();
+         SelNotes=PrioritySort(SelNotes);
+         std::list<FreqEvent>::iterator ith=SelNotes.begin();
+    //for(int i=0;i<SelNotes.size() && NotesOn.size()<MaxNotesPoly;i++)
+-        while(ith!=SelNotes.end() && NotesOn.size()<MaxNotesPoly)
++        while(ith!=SelNotes.end() && NotesOn.size()<=MaxNotesPoly)
+         {
+             if(NoteStatus[(*ith).note]!=NoteStatusOn)
+             {
+-                short nnote=(*ith).note;
+-                assert(nnote==this->NoteFromFreqNote(ith->nFreq));
+-                NoteOn((unsigned)nnote,(unsigned short)std::min((short)127,(short)((ith->velocity))),ith->nFreq,ith->nBuffer,ith->time);
++
++                if(NotesOn.size()>=MaxNotesPoly)
++                {
++                    while(NotesOn.size()>=MaxNotesPoly)
++                    {
++                        std::vector<FreqEvent>::iterator itn=NotesOn.begin();
++                        std::vector<FreqEvent>::iterator itdelete=itn;
++                        while(itn!=NotesOn.end())
++                        {
++                            if(itn->velocity<itdelete->velocity)
++                                itdelete=itn;
++                            itn++;
++                        }
++
++                        short nnote=itdelete->note;
++                        NotesOn.erase(itdelete);
++
++                        NoteOff((unsigned)nnote,nBuffer);
++
++                        NoteStatus[nnote]=NoteStatusOff;
++
++                    }
++                }
++
++                short nnote=(short)(*ith).note;
++                std::cout<<"nnote:"<<nnote<<", nfreq:"<<ith->nFreq<<"Punts: "<<ith->Puntuacio.PuntuacioOn<<std::endl;
++                std::vector<FreqEvent>::iterator ithn=NotesOn.begin();
++
++                std::cout<<(*ith).infostr;
++                char strnote[64];
++                std::cout<<"Notes On: ";
++
++                while(ithn!=NotesOn.end())
++                {
++                    std::cout<<EnglishNoteFromMidiNNote(ithn->note,strnote)<<"Velo: "<<ithn->Puntuacio.PuntuacioOn<<" ";
++                    ithn++;
++                }
++                std::cout<<std::endl;
++
++                assert(nnote==(short)NoteFromFreqNote((short)ith->nFreq));
++                NoteOn((unsigned)nnote,(unsigned short)std::min((short)127,(short)((ith->velocity))),ith->nFreq,ith->nBuffer,ith->time,ith->Puntuacio);
+                 NoteStatus[nnote]=NoteStatusOn;
++
+             }
+             ith++;
+        //NotesOn.push_back(SelNotes[i]);
+@@ -809,12 +1204,12 @@
+ };
+ 
+ 
+-void GuitarFreqAnalysis::NoteOn(unsigned short nnote,unsigned short velocity,unsigned short nfreq, unsigned long nbuffer,clock_t time)
++void GuitarFreqAnalysis::NoteOn(unsigned short nnote,unsigned short velocity,unsigned short nfreq, unsigned long nbuffer,clock_t time,PuntuacioNota pu)
+ {
+     FreqEvent evon;
+     if(time==0)
+         time=clock();
+-    evon.evNoteOn(nnote,velocity,nfreq,nbuffer,time);
++    evon.evNoteOn(nnote,velocity,nfreq,nbuffer,time,pu);
+     NoteStatus[nnote]=NoteStatusOn;
+     if(noti!=nullptr)
+         noti->Notify(evon);
+@@ -851,5 +1246,5 @@
+     //ChangedEvents=true;
+ };
+ GuitarFreqAnalysis::~GuitarFreqAnalysis()
+-{;
++{
+ }
+diff -ur ./guitarfreqanalysis.h ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/guitarfreqanalysis.h
+--- ./guitarfreqanalysis.h	2019-08-08 17:01:02.000000000 +0200
++++ ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/guitarfreqanalysis.h	2019-12-05 19:04:20.779631156 +0100
+@@ -1,6 +1,8 @@
+ #ifndef GUITARFREQANALYSIS_H
+ #define GUITARFREQANALYSIS_H
+ 
++//#define MONOPHONIC true
++
+ #include "audioinputinterf.h"
+ #include <time.h>
+ #include <iostream>
+@@ -8,16 +10,137 @@
+ #include <QObject>
+ class AndCondition;
+ class OrCondition;
++
++struct PuntuacioNota
++{
++    short Nota;
++    short nfreq;
++    double PuntuacioOn; //les que tenen mes s'activen
++    double Pes;
++    std::string Nom;
++    PuntuacioNota() {PuntuacioOn=0;nfreq=0;Nota=0;}
++};
++#include <iostream>
++class NoteInformation
++{
++protected:
++    char infostring[16024]="";
++    std::ostream *pos=nullptr;
++public:
++    NoteInformation(){clear();}
++    void setstream(std::ostream* os){pos=os;};
++    void AddLine(char *str){strcat(infostring,str);strcat(infostring,"\n");};
++    char *getStr(){return infostring;}
++    void clear(){infostring[0]=0;};
++//    std::string getstr(){return std::string(infostring);};
++
++};
++
+ class  Condition
+ {
++    public:
+ 
+-public:
+     OrCondition& operator || (Condition& other);
+     AndCondition& operator && (Condition& other);
+     virtual bool IsTrue()=0;
+     operator bool(){return IsTrue();}
+     virtual ~Condition(){}
+ };
++typedef double fzDouble;
++class FuzzyValue
++{
++protected:
++    fzDouble val;
++
++public:
++    operator fzDouble(){return val;}
++    FuzzyValue(){val=0.0;};//{cout<<"undefined FuzzyValue;";};//{assert(false);/*Value not initialized*/};
++    FuzzyValue(const FuzzyValue& o){val=o.val;assert(val>=0.0 && val<=1.0);}
++
++    FuzzyValue(const fzDouble fd){val=std::max(0.0,std::min(1.0,fd));assert(val>=0.0 && val<=1.0);}
++    FuzzyValue& operator= (const FuzzyValue& f){val=f.val;return *this;}
++    FuzzyValue& operator= (fzDouble fd){val=fd;return *this;}
++    FuzzyValue operator && (FuzzyValue other){return Intersect(*this,other);}
++    FuzzyValue operator || (FuzzyValue other){return Union(*this,other);}
++    FuzzyValue operator ! (){return Not(*this);}
++    bool operator == (FuzzyValue o) {return o.val==val;}
++   // FuzzyValue operator^ (FuzzyValue other){return Xor(*this,other);}
++
++
++
++    static FuzzyValue Or(FuzzyValue a,FuzzyValue b){return Union(a,b);}
++
++    static FuzzyValue Union(FuzzyValue a,FuzzyValue b);
++    static FuzzyValue Intersect(FuzzyValue a,FuzzyValue b);
++    static FuzzyValue Not(FuzzyValue v);
++    static FuzzyValue Xor(FuzzyValue a,FuzzyValue b);
++    static const FuzzyValue True() {return FuzzyValue(1.0);}
++    static const FuzzyValue False() {return FuzzyValue(0.0);}
++
++};
++    ;
++
++class FuzzyLogicObj: public Condition
++{
++protected:
++    FuzzyValue fzret=0;
++
++public:
++    static FuzzyValue Union(FuzzyValue a,FuzzyValue b){return (FuzzyValue::Union(a,b));}
++
++    static FuzzyValue Intersect(FuzzyValue a,FuzzyValue b){return (FuzzyValue::Intersect(a,b));}
++
++    static FuzzyValue Not(FuzzyValue v){return (FuzzyValue::Not(v));}
++
++    static FuzzyValue Xor(FuzzyValue a,FuzzyValue b){return FuzzyValue::Xor(a,b);}
++    static FuzzyValue True() {return FuzzyValue::True();}
++    static FuzzyValue False() {return FuzzyValue::False();}
++//    FuzzyLogicObj operator && (FuzzyLogicObj b){return Intersect(*this,b);};
++//    FuzzyLogicObj operator || (FuzzyLogicObj b){return Union(*this,b);};
++};
++
++class FuzzyCondition: public FuzzyLogicObj
++{
++protected:
++    bool Done=false;
++    FuzzyValue Weight=0.3;
++public:
++    virtual void writeinfo(NoteInformation& ni);
++
++    virtual FuzzyValue Value();
++
++    operator FuzzyValue(){return Value();}
++};
++class StepCondition: public FuzzyCondition
++{
++protected:
++
++public:
++    GuitarFreqAnalysis *gfa=nullptr;
++    enum St{Required=1,Requisite=2,Sufficient=3,Optional=4};
++    St Status;
++    bool Negative=false;
++    FuzzyValue Min;
++    FuzzyValue val;
++    StepCondition(St st,bool Negative,FuzzyValue v,FuzzyValue Minimum);
++    StepCondition(const StepCondition& other);
++    const StepCondition& operator= (const StepCondition& sc){Negative=sc.Negative;Min=sc.Min;Status=sc.Status;fzret=sc.fzret;Done=sc.Done;}
++    FuzzyValue Value() override;
++    bool IsTrue() override;
++    void writeinfo(NoteInformation& ni) override;
++};
++
++class SequentialCondition:public FuzzyCondition
++{
++protected:
++    std::list<StepCondition> Steps;
++public:
++    void Reset(){Steps.clear();Weight=1;};
++    GuitarFreqAnalysis *gfa=nullptr;
++    void Append(StepCondition& cond);
++    bool IsTrue() override;
++};
++
+ class AndCondition:public Condition
+ {
+     Condition *a,*b;
+@@ -25,7 +148,7 @@
+     AndCondition(Condition *ca,Condition *cb){a=ca;b=cb;}
+ 
+     bool IsTrue()  override;
+-    ~AndCondition() {}
++    ~AndCondition() override{}
+ 
+ };
+ class OrCondition:public Condition
+@@ -37,7 +160,7 @@
+ 
+ };
+ 
+-class NoteCondition :public Condition{
++class NoteCondition :public FuzzyCondition{
+ public:
+ 
+     NoteCondition(GuitarFreqAnalysis& gfa,SegmentDeFrequencies* cursg,SegmentDeFrequencies *prevsg,int freq,double velocity,int note,bool Precis);
+@@ -48,6 +171,7 @@
+     double velocity;
+     unsigned nnote;
+     bool Precis=false;
++
+     //virtual bool IsTrue() override;
+     Condition *rootCondition=nullptr;
+ };
+@@ -64,27 +188,42 @@
+      bool IsTrue() override;
+ };
+ 
+-class IncreaseModuleCondition:public Condition
++class IncreaseModuleCondition:public FuzzyCondition
+ {
+     double cur,ant,min,max,proporcio;
+  public:
+     IncreaseModuleCondition(double curabsdiff,double antabsdiff,double MinModul,double maxmodul,double minproporcio)
+-    {cur=curabsdiff;ant=antabsdiff;min=MinModul;max=maxmodul;proporcio=minproporcio;};
++    {Weight=1.0;cur=curabsdiff;ant=antabsdiff;min=MinModul;max=maxmodul;proporcio=minproporcio;};
++
+     bool IsTrue() override
+     {
++        bool ret=false;
++        fzret=std::max((double)0.0,(double)(cur-ant/*-min*/)/max);
++        //fzret=Intersect(fzret,MinModul);
++        if((cur-ant)<=min || cur<=(max*proporcio))
++        {
++            fzret=False();
++            Done=true;
++            ret=false;
++            return ret;
++        }
++        Done=true;
+         return (cur-ant)>min && cur>max*proporcio;
++
+     }
+ };
+ 
+-class IsMaxFreqCondition:public Condition
++class IsMaxFreqCondition:public FuzzyCondition
+ {
+ public:
++
+     int nfreq;
+     SegmentDeFrequencies *currentseg;
+     GuitarFreqAnalysis *gfa;
+     int addsubst=SegmentDeFrequencies::FreqsPerNota/2;
+     static const int ModulCond=1,AbsDiffCond=2,MaxValueCond=4;
+     int TypeCond=AbsDiffCond;
++    PuntuacioNota Puntu;
+     IsMaxFreqCondition(int nfr,SegmentDeFrequencies *cs,GuitarFreqAnalysis *ga,int as=0,int type=AbsDiffCond);
+ 
+     bool IsTrue()override;
+@@ -100,10 +239,11 @@
+ class NoteOnCondition:public NoteCondition{
+ protected:
+     bool SecondSel;
++    double incrementmodul;
+ public:
+ 
+     NoteOnCondition(GuitarFreqAnalysis& gfa,SegmentDeFrequencies* cursg,SegmentDeFrequencies *prevsg,int freq,double velocity,int note,bool Precis,bool prev);
+-
++    FuzzyValue Value() override;
+     bool IsTrue() override;
+ };
+ 
+@@ -129,6 +269,8 @@
+     clock_t time;
+     unsigned short nFreq;
+     double hz;
++    PuntuacioNota Puntuacio;
++    char infostr[16384]="";
+     FreqEvent(){}
+     FreqEvent(const FreqEvent& altre)
+     {
+@@ -139,6 +281,9 @@
+         time=altre.time;
+         nFreq=altre.nFreq;
+         hz=altre.hz;
++        Puntuacio=altre.Puntuacio;
++        strcpy(infostr,altre.infostr);
++
+     }
+     FreqEvent& operator=(const FreqEvent& altre)
+     {
+@@ -149,10 +294,12 @@
+         time=altre.time;
+         nFreq=altre.nFreq;
+         hz=altre.hz;
++        Puntuacio=altre.Puntuacio;
++        strcpy(infostr,altre.infostr);
+         return *this;
+     }
+ 
+-    void evNoteOn(unsigned short nnote,unsigned short vel,unsigned short nfreq,unsigned long nbuffer,clock_t tm);
++    void evNoteOn(unsigned short nnote,unsigned short vel,unsigned short nfreq,unsigned long nbuffer,clock_t tm,PuntuacioNota pu);
+     void evNoteOff(unsigned short nnote,unsigned long nbuffer,clock_t tm);
+ 
+ 
+@@ -167,6 +314,7 @@
+     virtual ~SystemNotifyFreqs(){}
+ };
+ 
++
+ class GuitarFreqAnalysis: public QObject
+ {
+     Q_OBJECT
+@@ -175,11 +323,21 @@
+ 
+     AudioInputInterf *audioInterface=nullptr;
+     SystemNotifyFreqs *noti=nullptr;
++
++
+ public:
+-    static const int MaxNotesPoly=6; //24....6 strings
++    SequentialCondition seqNoteOnCond;
++    NoteInformation curnoteinfo;
++#ifdef MONOPHONIC
++
++    static const int MaxNotesPoly=1;//6; //24....6 strings
++#else
++    static const int MaxNotesPoly=6;
++#endif
++    static const bool MONOPHONIC=(MaxNotesPoly==1);
+ 
+-    constexpr static const double MinModulNota=256;
+-    constexpr static const double MinModulNoteOff=92;
++    constexpr static const double MinModulNota=128;
++    constexpr static const double MinModulNoteOff=64;
+ 
+     unsigned long nBuffer=0;
+ 
+@@ -206,7 +364,7 @@
+     GuitarFreqAnalysis(AudioInputInterf *interf,SystemNotifyFreqs *   sn);
+     bool Start(const char *src=nullptr);
+     bool IsNoteOn(SegmentDeFrequencies& curseg,SegmentDeFrequencies& prevseg,int nfreq,double& velocity,unsigned nnote,bool Precis=false);
+-    void NoteOn(unsigned short nnote,unsigned short velocity,unsigned short nfreq,unsigned long nbuffer,clock_t time=0);
++    void NoteOn(unsigned short nnote,unsigned short velocity,unsigned short nfreq,unsigned long nbuffer,clock_t time,PuntuacioNota pu);
+     void NoteOff(unsigned short nnote,unsigned long nbuffer,clock_t time=0);
+     void AllNotesOff();
+     FreqVal CalcModulPrecisNota(int nfreq,unsigned nnota,SegmentDeFrequencies& curseg,unsigned NumFactorsMax=96);
+@@ -226,16 +384,39 @@
+ 
+ 
+ };
+-class EsHarmonicCond:public Condition
++
++class TeHarmonics: public FuzzyCondition
++{
++protected:
++    static int defaultharmonicsMirar[3];
++    SegmentDeFrequencies *curseg=nullptr;
++    SegmentDeFrequencies *prevseg=nullptr;
++
++    FreqVal fv;
++    int NFreqBase;
++ //   IsMaxCenterCondition *Maxcond;
++
++    int *harmmirar=nullptr;
++    int numharmmirar=0;
++    GuitarFreqAnalysis *gfa=nullptr;
++public:
++    PuntuacioNota Puntu;
++    TeHarmonics(GuitarFreqAnalysis& gf,int nfreq,SegmentDeFrequencies& curseg,SegmentDeFrequencies& prevs,int *harmonics=defaultharmonicsMirar,int numharmonics=sizeof(defaultharmonicsMirar)/sizeof(int));
++    bool IsTrue() override;
++    ~TeHarmonics() override;
++};
++
++class EsHarmonicCond:public FuzzyCondition
+ {
+     FreqEvent b;
+     FreqEvent h;
++    PuntuacioNota Puntu;
+ public:
+     EsHarmonicCond(FreqEvent base,FreqEvent harm);
+     bool IsTrue() override;
+ 
+ };
+-class ApproxCondition:public Condition
++class ApproxCondition:public FuzzyCondition
+ {
+     double a;
+     double b;
+Només a .: guitartomidi-github-to-12-12-2019.version.diff
+diff -ur ./guitartomidi-mindmapping6-2019.pro.user ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/guitartomidi-mindmapping6-2019.pro.user
+--- ./guitartomidi-mindmapping6-2019.pro.user	2019-08-08 17:01:02.000000000 +0200
++++ ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/guitartomidi-mindmapping6-2019.pro.user	2019-12-05 19:26:09.319666197 +0100
+@@ -1,6 +1,6 @@
+ <?xml version="1.0" encoding="UTF-8"?>
+ <!DOCTYPE QtCreatorProject>
+-<!-- Written by QtCreator 4.9.2, 2019-07-31T15:32:53. -->
++<!-- Written by QtCreator 4.10.2, 2019-12-05T19:26:09. -->
+ <qtcreator>
+  <data>
+   <variable>EnvironmentId</variable>
+@@ -326,15 +326,647 @@
+   </valuemap>
+  </data>
+  <data>
++  <variable>ProjectExplorer.Project.Target.1</variable>
++  <valuemap type="QVariantMap">
++   <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Android for x86_64 (Clang Qt 5.13.0 for Android x86_64)</value>
++   <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Android for x86_64 (Clang Qt 5.13.0 for Android x86_64)</value>
++   <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">{a07709ae-631c-45fd-b839-836c26982af9}</value>
++   <value type="int" key="ProjectExplorer.Target.ActiveBuildConfiguration">0</value>
++   <value type="int" key="ProjectExplorer.Target.ActiveDeployConfiguration">0</value>
++   <value type="int" key="ProjectExplorer.Target.ActiveRunConfiguration">0</value>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.0">
++    <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">/home/oriol/sdcard/Projectes/meu/qtcreator-workspace/guitartomidi-rewritten-mindmapping/build-guitartomidi-mindmapping6-2019-Android_for_x86_64_Clang_Qt_5_13_0_for_Android_x86_64-Debug</value>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">qmake</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QtProjectManager.QMakeBuildStep</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.LinkQmlDebuggingLibrary">true</value>
++      <value type="QString" key="QtProjectManager.QMakeBuildStep.QMakeArguments"></value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.QMakeForced">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.SeparateDebugInfo">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.UseQtQuickCompiler">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.1">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">false</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments"></value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.2">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Copy application data</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidPackageInstallationStep</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.3">
++      <value type="QString" key="BuildTargetSdk"></value>
++      <value type="QString" key="KeystoreLocation"></value>
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build Android APK</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QmakeProjectManager.AndroidBuildApkStep</value>
++      <value type="bool" key="UseMinistro">false</value>
++      <value type="bool" key="VerboseOutput">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">4</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Build</value>
++    </valuemap>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.1">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">true</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments">clean</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Clean</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Clean</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">2</value>
++    <value type="bool" key="ProjectExplorer.BuildConfiguration.ClearSystemEnvironment">false</value>
++    <valuelist type="QVariantList" key="ProjectExplorer.BuildConfiguration.UserEnvironmentChanges"/>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Debug</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Debug</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.Qt4BuildConfiguration</value>
++    <value type="int" key="Qt4ProjectManager.Qt4BuildConfiguration.BuildConfiguration">2</value>
++    <value type="bool" key="Qt4ProjectManager.Qt4BuildConfiguration.UseShadowBuild">true</value>
++   </valuemap>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.1">
++    <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">/home/oriol/sdcard/Projectes/meu/qtcreator-workspace/guitartomidi-rewritten-mindmapping/build-guitartomidi-mindmapping6-2019-Android_for_x86_64_Clang_Qt_5_13_0_for_Android_x86_64-Release</value>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">qmake</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QtProjectManager.QMakeBuildStep</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.LinkQmlDebuggingLibrary">false</value>
++      <value type="QString" key="QtProjectManager.QMakeBuildStep.QMakeArguments"></value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.QMakeForced">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.SeparateDebugInfo">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.UseQtQuickCompiler">true</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.1">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">false</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments"></value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.2">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Copy application data</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidPackageInstallationStep</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.3">
++      <value type="QString" key="BuildTargetSdk"></value>
++      <value type="QString" key="KeystoreLocation"></value>
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build Android APK</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QmakeProjectManager.AndroidBuildApkStep</value>
++      <value type="bool" key="UseMinistro">false</value>
++      <value type="bool" key="VerboseOutput">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">4</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Build</value>
++    </valuemap>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.1">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">true</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments">clean</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Clean</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Clean</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">2</value>
++    <value type="bool" key="ProjectExplorer.BuildConfiguration.ClearSystemEnvironment">false</value>
++    <valuelist type="QVariantList" key="ProjectExplorer.BuildConfiguration.UserEnvironmentChanges"/>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Release</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Release</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.Qt4BuildConfiguration</value>
++    <value type="int" key="Qt4ProjectManager.Qt4BuildConfiguration.BuildConfiguration">0</value>
++    <value type="bool" key="Qt4ProjectManager.Qt4BuildConfiguration.UseShadowBuild">true</value>
++   </valuemap>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.2">
++    <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">/home/oriol/sdcard/Projectes/meu/qtcreator-workspace/guitartomidi-rewritten-mindmapping/build-guitartomidi-mindmapping6-2019-Android_for_x86_64_Clang_Qt_5_13_0_for_Android_x86_64-Profile</value>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">qmake</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QtProjectManager.QMakeBuildStep</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.LinkQmlDebuggingLibrary">true</value>
++      <value type="QString" key="QtProjectManager.QMakeBuildStep.QMakeArguments"></value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.QMakeForced">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.SeparateDebugInfo">true</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.UseQtQuickCompiler">true</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.1">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">false</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments"></value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.2">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Copy application data</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidPackageInstallationStep</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.3">
++      <value type="QString" key="BuildTargetSdk"></value>
++      <value type="QString" key="KeystoreLocation"></value>
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build Android APK</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QmakeProjectManager.AndroidBuildApkStep</value>
++      <value type="bool" key="UseMinistro">false</value>
++      <value type="bool" key="VerboseOutput">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">4</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Build</value>
++    </valuemap>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.1">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">true</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments">clean</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Clean</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Clean</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">2</value>
++    <value type="bool" key="ProjectExplorer.BuildConfiguration.ClearSystemEnvironment">false</value>
++    <valuelist type="QVariantList" key="ProjectExplorer.BuildConfiguration.UserEnvironmentChanges"/>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Profile</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Profile</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.Qt4BuildConfiguration</value>
++    <value type="int" key="Qt4ProjectManager.Qt4BuildConfiguration.BuildConfiguration">0</value>
++    <value type="bool" key="Qt4ProjectManager.Qt4BuildConfiguration.UseShadowBuild">true</value>
++   </valuemap>
++   <value type="int" key="ProjectExplorer.Target.BuildConfigurationCount">3</value>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.DeployConfiguration.0">
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Deploy to Android device</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidDeployQtStep</value>
++      <value type="bool" key="UninstallPreviousPackage">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Deploy</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Deploy</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">1</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Deploy to Android device</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidDeployConfiguration2</value>
++   </valuemap>
++   <value type="int" key="ProjectExplorer.Target.DeployConfigurationCount">1</value>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.PluginSettings"/>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.RunConfiguration.0">
++    <value type="QString" key="Analyzer.Perf.CallgraphMode">dwarf</value>
++    <valuelist type="QVariantList" key="Analyzer.Perf.Events">
++     <value type="QString">cpu-cycles</value>
++    </valuelist>
++    <valuelist type="QVariantList" key="Analyzer.Perf.ExtraArguments"/>
++    <value type="int" key="Analyzer.Perf.Frequency">250</value>
++    <value type="QString" key="Analyzer.Perf.SampleMode">-F</value>
++    <value type="bool" key="Analyzer.Perf.Settings.UseGlobalSettings">true</value>
++    <value type="int" key="Analyzer.Perf.StackSize">4096</value>
++    <value type="bool" key="Analyzer.QmlProfiler.AggregateTraces">false</value>
++    <value type="bool" key="Analyzer.QmlProfiler.FlushEnabled">false</value>
++    <value type="uint" key="Analyzer.QmlProfiler.FlushInterval">1000</value>
++    <value type="QString" key="Analyzer.QmlProfiler.LastTraceFile"></value>
++    <value type="bool" key="Analyzer.QmlProfiler.Settings.UseGlobalSettings">true</value>
++    <valuelist type="QVariantList" key="Analyzer.Valgrind.AddedSuppressionFiles"/>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.CollectBusEvents">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.CollectSystime">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.EnableBranchSim">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.EnableCacheSim">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.EnableEventToolTips">true</value>
++    <value type="double" key="Analyzer.Valgrind.Callgrind.MinimumCostRatio">0.01</value>
++    <value type="double" key="Analyzer.Valgrind.Callgrind.VisualisationMinimumCostRatio">10</value>
++    <value type="bool" key="Analyzer.Valgrind.FilterExternalIssues">true</value>
++    <value type="QString" key="Analyzer.Valgrind.KCachegrindExecutable">kcachegrind</value>
++    <value type="int" key="Analyzer.Valgrind.LeakCheckOnFinish">1</value>
++    <value type="int" key="Analyzer.Valgrind.NumCallers">25</value>
++    <valuelist type="QVariantList" key="Analyzer.Valgrind.RemovedSuppressionFiles"/>
++    <value type="int" key="Analyzer.Valgrind.SelfModifyingCodeDetection">1</value>
++    <value type="bool" key="Analyzer.Valgrind.Settings.UseGlobalSettings">true</value>
++    <value type="bool" key="Analyzer.Valgrind.ShowReachable">false</value>
++    <value type="bool" key="Analyzer.Valgrind.TrackOrigins">true</value>
++    <value type="QString" key="Analyzer.Valgrind.ValgrindExecutable">valgrind</value>
++    <valuelist type="QVariantList" key="Analyzer.Valgrind.VisibleErrorKinds">
++     <value type="int">0</value>
++     <value type="int">1</value>
++     <value type="int">2</value>
++     <value type="int">3</value>
++     <value type="int">4</value>
++     <value type="int">5</value>
++     <value type="int">6</value>
++     <value type="int">7</value>
++     <value type="int">8</value>
++     <value type="int">9</value>
++     <value type="int">10</value>
++     <value type="int">11</value>
++     <value type="int">12</value>
++     <value type="int">13</value>
++     <value type="int">14</value>
++    </valuelist>
++    <value type="int" key="PE.EnvironmentAspect.Base">2</value>
++    <valuelist type="QVariantList" key="PE.EnvironmentAspect.Changes"/>
++    <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.Executable"></value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Custom Executable</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.CustomExecutableRunConfiguration</value>
++    <value type="QString" key="RunConfiguration.Arguments"></value>
++    <value type="uint" key="RunConfiguration.QmlDebugServerPort">3768</value>
++    <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>
++    <value type="bool" key="RunConfiguration.UseCppDebuggerAuto">true</value>
++    <value type="bool" key="RunConfiguration.UseMultiProcess">false</value>
++    <value type="bool" key="RunConfiguration.UseQmlDebugger">false</value>
++    <value type="bool" key="RunConfiguration.UseQmlDebuggerAuto">true</value>
++    <value type="QString" key="RunConfiguration.WorkingDirectory"></value>
++    <value type="QString" key="RunConfiguration.WorkingDirectory.default"></value>
++   </valuemap>
++   <value type="int" key="ProjectExplorer.Target.RunConfigurationCount">1</value>
++  </valuemap>
++ </data>
++ <data>
++  <variable>ProjectExplorer.Project.Target.2</variable>
++  <valuemap type="QVariantMap">
++   <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Android for arm64-v8a (Clang Qt 5.13.0 for Android ARM64-v8a)</value>
++   <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Android for arm64-v8a (Clang Qt 5.13.0 for Android ARM64-v8a)</value>
++   <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">{8faab045-0766-4e5f-9460-a6de9ea9b7b6}</value>
++   <value type="int" key="ProjectExplorer.Target.ActiveBuildConfiguration">0</value>
++   <value type="int" key="ProjectExplorer.Target.ActiveDeployConfiguration">0</value>
++   <value type="int" key="ProjectExplorer.Target.ActiveRunConfiguration">0</value>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.0">
++    <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">/home/oriol/sdcard/Projectes/meu/qtcreator-workspace/guitartomidi-rewritten-mindmapping/build-guitartomidi-mindmapping6-2019-Android_for_arm64_v8a_Clang_Qt_5_13_0_for_Android_ARM64_v8a-Debug</value>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">qmake</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QtProjectManager.QMakeBuildStep</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.LinkQmlDebuggingLibrary">true</value>
++      <value type="QString" key="QtProjectManager.QMakeBuildStep.QMakeArguments"></value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.QMakeForced">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.SeparateDebugInfo">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.UseQtQuickCompiler">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.1">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">false</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments"></value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.2">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Copy application data</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidPackageInstallationStep</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.3">
++      <value type="QString" key="BuildTargetSdk"></value>
++      <value type="QString" key="KeystoreLocation"></value>
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build Android APK</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QmakeProjectManager.AndroidBuildApkStep</value>
++      <value type="bool" key="UseMinistro">false</value>
++      <value type="bool" key="VerboseOutput">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">4</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Build</value>
++    </valuemap>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.1">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">true</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments">clean</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Clean</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Clean</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">2</value>
++    <value type="bool" key="ProjectExplorer.BuildConfiguration.ClearSystemEnvironment">false</value>
++    <valuelist type="QVariantList" key="ProjectExplorer.BuildConfiguration.UserEnvironmentChanges"/>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Debug</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Debug</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.Qt4BuildConfiguration</value>
++    <value type="int" key="Qt4ProjectManager.Qt4BuildConfiguration.BuildConfiguration">2</value>
++    <value type="bool" key="Qt4ProjectManager.Qt4BuildConfiguration.UseShadowBuild">true</value>
++   </valuemap>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.1">
++    <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">/home/oriol/sdcard/Projectes/meu/qtcreator-workspace/guitartomidi-rewritten-mindmapping/build-guitartomidi-mindmapping6-2019-Android_for_arm64_v8a_Clang_Qt_5_13_0_for_Android_ARM64_v8a-Release</value>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">qmake</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QtProjectManager.QMakeBuildStep</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.LinkQmlDebuggingLibrary">false</value>
++      <value type="QString" key="QtProjectManager.QMakeBuildStep.QMakeArguments"></value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.QMakeForced">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.SeparateDebugInfo">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.UseQtQuickCompiler">true</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.1">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">false</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments"></value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.2">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Copy application data</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidPackageInstallationStep</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.3">
++      <value type="QString" key="BuildTargetSdk"></value>
++      <value type="QString" key="KeystoreLocation"></value>
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build Android APK</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QmakeProjectManager.AndroidBuildApkStep</value>
++      <value type="bool" key="UseMinistro">false</value>
++      <value type="bool" key="VerboseOutput">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">4</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Build</value>
++    </valuemap>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.1">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">true</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments">clean</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Clean</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Clean</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">2</value>
++    <value type="bool" key="ProjectExplorer.BuildConfiguration.ClearSystemEnvironment">false</value>
++    <valuelist type="QVariantList" key="ProjectExplorer.BuildConfiguration.UserEnvironmentChanges"/>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Release</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Release</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.Qt4BuildConfiguration</value>
++    <value type="int" key="Qt4ProjectManager.Qt4BuildConfiguration.BuildConfiguration">0</value>
++    <value type="bool" key="Qt4ProjectManager.Qt4BuildConfiguration.UseShadowBuild">true</value>
++   </valuemap>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.BuildConfiguration.2">
++    <value type="QString" key="ProjectExplorer.BuildConfiguration.BuildDirectory">/home/oriol/sdcard/Projectes/meu/qtcreator-workspace/guitartomidi-rewritten-mindmapping/build-guitartomidi-mindmapping6-2019-Android_for_arm64_v8a_Clang_Qt_5_13_0_for_Android_ARM64_v8a-Profile</value>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">qmake</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QtProjectManager.QMakeBuildStep</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.LinkQmlDebuggingLibrary">true</value>
++      <value type="QString" key="QtProjectManager.QMakeBuildStep.QMakeArguments"></value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.QMakeForced">false</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.SeparateDebugInfo">true</value>
++      <value type="bool" key="QtProjectManager.QMakeBuildStep.UseQtQuickCompiler">true</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.1">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">false</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments"></value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.2">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Copy application data</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidPackageInstallationStep</value>
++     </valuemap>
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.3">
++      <value type="QString" key="BuildTargetSdk"></value>
++      <value type="QString" key="KeystoreLocation"></value>
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build Android APK</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">QmakeProjectManager.AndroidBuildApkStep</value>
++      <value type="bool" key="UseMinistro">false</value>
++      <value type="bool" key="VerboseOutput">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">4</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Build</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Build</value>
++    </valuemap>
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.1">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Make</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.MakeStep</value>
++      <valuelist type="QVariantList" key="Qt4ProjectManager.MakeStep.BuildTargets"/>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.Clean">true</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeArguments">clean</value>
++      <value type="QString" key="Qt4ProjectManager.MakeStep.MakeCommand"></value>
++      <value type="bool" key="Qt4ProjectManager.MakeStep.OverrideMakeflags">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Clean</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Clean</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">2</value>
++    <value type="bool" key="ProjectExplorer.BuildConfiguration.ClearSystemEnvironment">false</value>
++    <valuelist type="QVariantList" key="ProjectExplorer.BuildConfiguration.UserEnvironmentChanges"/>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Profile</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName">Profile</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.Qt4BuildConfiguration</value>
++    <value type="int" key="Qt4ProjectManager.Qt4BuildConfiguration.BuildConfiguration">0</value>
++    <value type="bool" key="Qt4ProjectManager.Qt4BuildConfiguration.UseShadowBuild">true</value>
++   </valuemap>
++   <value type="int" key="ProjectExplorer.Target.BuildConfigurationCount">3</value>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.DeployConfiguration.0">
++    <valuemap type="QVariantMap" key="ProjectExplorer.BuildConfiguration.BuildStepList.0">
++     <valuemap type="QVariantMap" key="ProjectExplorer.BuildStepList.Step.0">
++      <value type="bool" key="ProjectExplorer.BuildStep.Enabled">true</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Deploy to Android device</value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++      <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidDeployQtStep</value>
++      <value type="bool" key="UninstallPreviousPackage">false</value>
++     </valuemap>
++     <value type="int" key="ProjectExplorer.BuildStepList.StepsCount">1</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Deploy</value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++     <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.BuildSteps.Deploy</value>
++    </valuemap>
++    <value type="int" key="ProjectExplorer.BuildConfiguration.BuildStepListCount">1</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Deploy to Android device</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">Qt4ProjectManager.AndroidDeployConfiguration2</value>
++   </valuemap>
++   <value type="int" key="ProjectExplorer.Target.DeployConfigurationCount">1</value>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.PluginSettings"/>
++   <valuemap type="QVariantMap" key="ProjectExplorer.Target.RunConfiguration.0">
++    <value type="QString" key="Analyzer.Perf.CallgraphMode">dwarf</value>
++    <valuelist type="QVariantList" key="Analyzer.Perf.Events">
++     <value type="QString">cpu-cycles</value>
++    </valuelist>
++    <valuelist type="QVariantList" key="Analyzer.Perf.ExtraArguments"/>
++    <value type="int" key="Analyzer.Perf.Frequency">250</value>
++    <value type="QString" key="Analyzer.Perf.SampleMode">-F</value>
++    <value type="bool" key="Analyzer.Perf.Settings.UseGlobalSettings">true</value>
++    <value type="int" key="Analyzer.Perf.StackSize">4096</value>
++    <value type="bool" key="Analyzer.QmlProfiler.AggregateTraces">false</value>
++    <value type="bool" key="Analyzer.QmlProfiler.FlushEnabled">false</value>
++    <value type="uint" key="Analyzer.QmlProfiler.FlushInterval">1000</value>
++    <value type="QString" key="Analyzer.QmlProfiler.LastTraceFile"></value>
++    <value type="bool" key="Analyzer.QmlProfiler.Settings.UseGlobalSettings">true</value>
++    <valuelist type="QVariantList" key="Analyzer.Valgrind.AddedSuppressionFiles"/>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.CollectBusEvents">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.CollectSystime">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.EnableBranchSim">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.EnableCacheSim">false</value>
++    <value type="bool" key="Analyzer.Valgrind.Callgrind.EnableEventToolTips">true</value>
++    <value type="double" key="Analyzer.Valgrind.Callgrind.MinimumCostRatio">0.01</value>
++    <value type="double" key="Analyzer.Valgrind.Callgrind.VisualisationMinimumCostRatio">10</value>
++    <value type="bool" key="Analyzer.Valgrind.FilterExternalIssues">true</value>
++    <value type="QString" key="Analyzer.Valgrind.KCachegrindExecutable">kcachegrind</value>
++    <value type="int" key="Analyzer.Valgrind.LeakCheckOnFinish">1</value>
++    <value type="int" key="Analyzer.Valgrind.NumCallers">25</value>
++    <valuelist type="QVariantList" key="Analyzer.Valgrind.RemovedSuppressionFiles"/>
++    <value type="int" key="Analyzer.Valgrind.SelfModifyingCodeDetection">1</value>
++    <value type="bool" key="Analyzer.Valgrind.Settings.UseGlobalSettings">true</value>
++    <value type="bool" key="Analyzer.Valgrind.ShowReachable">false</value>
++    <value type="bool" key="Analyzer.Valgrind.TrackOrigins">true</value>
++    <value type="QString" key="Analyzer.Valgrind.ValgrindExecutable">valgrind</value>
++    <valuelist type="QVariantList" key="Analyzer.Valgrind.VisibleErrorKinds">
++     <value type="int">0</value>
++     <value type="int">1</value>
++     <value type="int">2</value>
++     <value type="int">3</value>
++     <value type="int">4</value>
++     <value type="int">5</value>
++     <value type="int">6</value>
++     <value type="int">7</value>
++     <value type="int">8</value>
++     <value type="int">9</value>
++     <value type="int">10</value>
++     <value type="int">11</value>
++     <value type="int">12</value>
++     <value type="int">13</value>
++     <value type="int">14</value>
++    </valuelist>
++    <value type="int" key="PE.EnvironmentAspect.Base">2</value>
++    <valuelist type="QVariantList" key="PE.EnvironmentAspect.Changes"/>
++    <value type="QString" key="ProjectExplorer.CustomExecutableRunConfiguration.Executable"></value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DefaultDisplayName">Custom Executable</value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.DisplayName"></value>
++    <value type="QString" key="ProjectExplorer.ProjectConfiguration.Id">ProjectExplorer.CustomExecutableRunConfiguration</value>
++    <value type="QString" key="RunConfiguration.Arguments"></value>
++    <value type="uint" key="RunConfiguration.QmlDebugServerPort">3768</value>
++    <value type="bool" key="RunConfiguration.UseCppDebugger">false</value>
++    <value type="bool" key="RunConfiguration.UseCppDebuggerAuto">true</value>
++    <value type="bool" key="RunConfiguration.UseMultiProcess">false</value>
++    <value type="bool" key="RunConfiguration.UseQmlDebugger">false</value>
++    <value type="bool" key="RunConfiguration.UseQmlDebuggerAuto">true</value>
++    <value type="QString" key="RunConfiguration.WorkingDirectory"></value>
++    <value type="QString" key="RunConfiguration.WorkingDirectory.default"></value>
++   </valuemap>
++   <value type="int" key="ProjectExplorer.Target.RunConfigurationCount">1</value>
++  </valuemap>
++ </data>
++ <data>
+   <variable>ProjectExplorer.Project.TargetCount</variable>
+-  <value type="int">1</value>
++  <value type="int">3</value>
+  </data>
+  <data>
+   <variable>ProjectExplorer.Project.Updater.FileVersion</variable>
+-  <value type="int">21</value>
++  <value type="int">22</value>
+  </data>
+  <data>
+   <variable>Version</variable>
+-  <value type="int">21</value>
++  <value type="int">22</value>
+  </data>
+ </qtcreator>
+Només a ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019: guitartomidi-mindmapping6-2019.pro.user.4.10-pre1
+diff -ur ./main.cpp ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/main.cpp
+--- ./main.cpp	2019-08-08 17:01:02.000000000 +0200
++++ ../../qtcreator-workspace/guitartomidi-rewritten-mindmapping/guitartomidi-mindmapping6-2019/main.cpp	2019-11-28 17:22:28.054498591 +0100
+@@ -33,7 +33,7 @@
+     Qtg2mSystem sysinter(&f);
+     sysinter.SetStatus("Starting...");
+ 
+-     f.show();
++    f.show();
+     QtCharts::QChart vchart;
+     QtCharts::QChartView chv(&vchart);
+     chv.size().rwidth()=800;
